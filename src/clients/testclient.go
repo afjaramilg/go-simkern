@@ -7,7 +7,10 @@ import (
 	"pryct1/req"
 	"strings"
 	//"strconv"
+
 )
+
+
 
 type testClient struct {
 	clientState
@@ -31,6 +34,7 @@ func (t *testClient) recvLoop() {
 		read, err := t.serverConn.Read(t.reqbuf)
 		if err != nil || read == 0 {
 			fmt.Println("cant reach server, bye")
+            os.Exit(0) //not great
 			return
 		}
 
@@ -65,7 +69,7 @@ func (t *testClient) openApp() {
 
 func (t *testClient) closeApp() {
 	var appInd uint32
-	fmt.Println("enter app number")
+	fmt.Println("enter process number")
 	fmt.Scanf("%d\n", &appInd)
 
 	resp := req.Req{

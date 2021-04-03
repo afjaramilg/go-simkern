@@ -5,6 +5,7 @@ import (
 	"log"
 	"net"
 	"os/exec"
+    "os"
 	"pryct1/req"
 	"sync"
 )
@@ -38,7 +39,7 @@ func remClient(cind uint32) {
 func logMsg(orig req.Req, payload []byte) bool {
 	//omits OK, ERR, IDEN
 	if orig.Rtype == req.OK || orig.Rtype == req.ERR ||
-		orig.Rtype == req.IDEN {
+		orig.Rtype == req.IDEN || orig.Rtype == req.LOGMSG {
 		return false
 	}
 
@@ -94,27 +95,23 @@ func sendMsg(c clientConn, rtype uint16, payload []byte,
 
 func fwdMsg(c clientConn, r req.Req) {
 	plbuf := make([]byte, r.Plsz)
-	read, err := c.Conn.Read(plbuf)
 
-	if err != nil || read == 0 {
-		remClient(c.ClientID)
+	if r.Plsz > 0 {
+		read, err := c.Conn.Read(plbuf)
+		if err != nil || read == 0 {
+			remClient(c.ClientID)
+			return
+		}
+	}
+
+	if r.Info == 0 {
 		return
 	}
 
 	dst_raw, dstinmap := conns.Load(r.Info)
-	if dst_raw == nil || !dstinmap {
-		msg := fmt.Sprintf("dst %d doesnt exist", r.Info)
-		sendMsg(c, req.ERR, []byte(msg), 0)
-	} else {
+	if dst_raw != nil && dstinmap {
 		dst := dst_raw.(clientConn)
-		sent := sendMsg(dst, req.FWDMSG, plbuf, c.ClientID)
-		if !sent {
-			msg := fmt.Sprintf("cant send msg to %d", r.Info)
-			sendMsg(c, req.ERR, []byte(msg), 0)
-		} else {
-			msg := fmt.Sprintf("sent message to %d", r.Info)
-			sendMsg(c, req.OK, []byte(msg), 0)
-		}
+		sendMsg(dst, r.Rtype, plbuf, c.ClientID)
 	}
 }
 
@@ -145,7 +142,12 @@ func clientHandler(cind uint32) {
 			creq.Rtype <= req.FMOPEN):
 			state_ch <- clientReq{creq, c}
 
-		case creq.Rtype == req.FWDMSG:
+		case creq.Rtype == req.IDEN:
+			errMsg := fmt.Sprintf("you said youre a %s",
+				req.CtypeMap[c.Ctype])
+			sendMsg(c, req.ERR, []byte(errMsg), 0)
+
+		default:
 			fwdMsg(c, creq)
 		}
 	}
@@ -154,8 +156,9 @@ func clientHandler(cind uint32) {
 }
 
 func openProc(openProcs *uint32) (uint16, []byte) {
+	fmt.Printf("open processses: %d\n", *openProcs)
 	if *(openProcs) >= maxOpenProcs {
-		msg := fmt.Sprintf("cant open anymore processes")
+		msg := fmt.Sprintf("cant open any more processes")
 		return req.ERR, []byte(msg)
 	}
 
@@ -171,13 +174,12 @@ func openProc(openProcs *uint32) (uint16, []byte) {
 	return req.OK, []byte(msg)
 }
 
-func closeProc(openProcs *uint32, procID uint32,
-	fmOpen *bool) (uint16, []byte) {
+func closeProc(openProcs *uint32, procID uint32) (uint16, []byte) {
+    if procID == 0 {
+        os.Exit(0) //not great
+    }
 
-	if procID < 1 {
-		msg := fmt.Sprintf("invalid process ID %d", procID)
-		return req.ERR, []byte(msg)
-	}
+
 
 	c_raw, inmap := conns.Load(procID)
 	if !inmap {
@@ -192,9 +194,8 @@ func closeProc(openProcs *uint32, procID uint32,
 	}
 	sendMsg(c, req.PRCLOSE, []byte{}, 0)
 
-	*openProcs--
-	if procID == 1 {
-		*fmOpen = false
+	if procID != 1 {
+		*openProcs--
 	}
 
 	msg := fmt.Sprintf("process %d closed", procID)
@@ -221,8 +222,9 @@ func listProc() (uint16, []byte) {
 	return req.PRLIST, proclist
 }
 
-func openFM(fmOpen *bool) (uint16, []byte) {
-	if *fmOpen {
+func openFM() (uint16, []byte) {
+	_, inmap := conns.Load(uint32(1))
+	if inmap {
 		msg := "file manager is already open"
 		return req.ERR, []byte(msg)
 	}
@@ -233,14 +235,12 @@ func openFM(fmOpen *bool) (uint16, []byte) {
 		return req.ERR, []byte(msg)
 	}
 
-	*fmOpen = true
 	msg := "file manager opened succesfully"
 	return req.OK, []byte(msg)
 }
 
 func stateHandler() {
 	var openProcs uint32 = 0
-	fmOpen := false
 
 	for clreq := range state_ch {
 		var succ uint16
@@ -252,14 +252,15 @@ func stateHandler() {
 			succ, msg = openProc(&openProcs)
 		case req.PRCLOSE:
 			fmt.Println("closing process")
-			succ, msg = closeProc(&openProcs, clreq.r.Info, &fmOpen)
+			succ, msg = closeProc(&openProcs, clreq.r.Info)
 
 		case req.PRLIST:
 			fmt.Println("listing processes")
 			succ, msg = listProc()
+
 		case req.FMOPEN:
 			fmt.Println("opening file manager")
-			succ, msg = openFM(&fmOpen)
+			succ, msg = openFM()
 
 		}
 		// log old message
@@ -276,8 +277,7 @@ func handleEnter() {
 	var idenReq req.Req
 
 	for nconn := range enter_ch {
-		newcc := clientConn{Conn: nconn, ClientID: ind}
-		sendMsg(newcc, req.OK, []byte{}, 0) //send it its new ID
+		newcc := clientConn{Conn: nconn, ClientID: ind} //future conn
 
 		read, err := nconn.Read(reqbuf) //read IDEN response
 		req.ReqDeserial(&idenReq, reqbuf)
@@ -285,14 +285,18 @@ func handleEnter() {
 		if err == nil && read > 0 &&
 			idenReq.Rtype == req.IDEN {
 
-			newcc.Ctype = uint8(idenReq.Info)
+			newcc.Ctype = uint8(idenReq.Info) //info contains ctype
+			var respRtype uint16 = req.OK
 
-			// you dont check if fm is already open.
-			// this can result in multiple file managers
-			sendMsg(newcc, req.OK, []byte{}, 0)
 			if newcc.Ctype == req.FM {
+				_, fmopen := conns.Load(uint32(1))
 				newcc.ClientID = 1
+				if fmopen {
+					respRtype = req.ERR
+				}
 			}
+
+			sendMsg(newcc, respRtype, []byte{}, 0)
 
 			fmt.Printf("client %d claims to be a %s\n",
 				newcc.ClientID, req.CtypeMap[newcc.Ctype])
