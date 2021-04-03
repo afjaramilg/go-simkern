@@ -13,7 +13,7 @@ import "fmt"
 
 // serialize a 16bit unsigned in network order
 // returns slice to write to next
-func serU16(n uint16, tgt []byte) []byte {
+func SerU16(n uint16, tgt []byte) []byte {
 	tgt[0] = byte(n >> 8)
 	tgt[1] = byte(n)
 
@@ -26,7 +26,7 @@ func serU16(n uint16, tgt []byte) []byte {
 
 // serialize a 32bit unsigned in network order
 // returns slice to write to next
-func serU32(n uint32, tgt []byte) []byte {
+func SerU32(n uint32, tgt []byte) []byte {
 	tgt[0] = byte(n >> 24)
 	tgt[1] = byte(n >> 16)
 	tgt[2] = byte(n >> 8)
@@ -41,7 +41,7 @@ func serU32(n uint32, tgt []byte) []byte {
 
 // deserialize a 16bit unsigned in network order
 // returns slice to read from next
-func deserU16(n *uint16, src []byte) []byte {
+func DeserU16(n *uint16, src []byte) []byte {
 	*n = uint16(src[0]<<8) | uint16(src[1])
 
 	if len(src) < 3 {
@@ -53,7 +53,7 @@ func deserU16(n *uint16, src []byte) []byte {
 
 // deserialize a 32bit unsigned in network order
 // returns slice to read from next
-func deserU32(n *uint32, src []byte) []byte {
+func DeserU32(n *uint32, src []byte) []byte {
 	*n = uint32(src[0]<<24) | uint32(src[1]<<16)
 	*n |= uint32(src[2]<<8) | uint32(src[3])
 
@@ -74,11 +74,11 @@ func ReqSerial(buf []byte, r *Req) error {
 	}
 
 	writeh := buf[0:]
-	writeh = serU16(r.Id, writeh)
-	writeh = serU16(r.Rtype, writeh)
-	writeh = serU32(r.Src, writeh)
-	writeh = serU32(r.Info, writeh)
-	writeh = serU32(r.Plsz, writeh)
+	writeh = SerU16(r.Id, writeh)
+	writeh = SerU16(r.Rtype, writeh)
+	writeh = SerU32(r.Src, writeh)
+	writeh = SerU32(r.Info, writeh)
+	writeh = SerU32(r.Plsz, writeh)
 
 	return nil
 }
@@ -90,11 +90,11 @@ func ReqDeserial(r *Req, buf []byte) error {
 	}
 
 	readh := buf[0:]
-	readh = deserU16(&r.Id, readh)
-	readh = deserU16(&r.Rtype, readh)
-	readh = deserU32(&r.Src, readh)
-	readh = deserU32(&r.Info, readh)
-	readh = deserU32(&r.Plsz, readh)
+	readh = DeserU16(&r.Id, readh)
+	readh = DeserU16(&r.Rtype, readh)
+	readh = DeserU32(&r.Src, readh)
+	readh = DeserU32(&r.Info, readh)
+	readh = DeserU32(&r.Plsz, readh)
 
 	return nil
 }

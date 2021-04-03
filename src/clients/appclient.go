@@ -30,7 +30,7 @@ func StartAppClient() {
 			return
 		}
 
-		fmt.Println("ive dun read somethin")
+		//fmt.Println("ive dun read somethin")
 
 		req.ReqDeserial(&recvdReq, ac.reqbuf)
 		fmt.Printf("recieved %d %s\n", read, recvdReq)

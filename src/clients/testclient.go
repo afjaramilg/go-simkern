@@ -1,13 +1,29 @@
 package clients
 
 import (
+	"bufio"
 	"fmt"
+	"os"
 	"pryct1/req"
+	"strings"
 	//"strconv"
 )
 
 type testClient struct {
 	clientState
+}
+
+func printProcList(plist []byte) {
+	var cind uint32
+	var ctype uint8
+	fmt.Println("-----------------------")
+	for i := 0; i <= len(plist)-5; i += 5 {
+		req.DeserU32(&cind, plist[i:])
+		ctype = uint8(plist[i+4])
+
+		fmt.Printf("PROC: %d, %s\n", cind, req.CtypeMap[ctype])
+	}
+	fmt.Println("------------------------")
 }
 
 func (t *testClient) recvLoop() {
@@ -18,7 +34,7 @@ func (t *testClient) recvLoop() {
 			return
 		}
 
-		fmt.Println("ive dun read somethin")
+		//fmt.Println("ive dun read somethin")
 
 		var recvdReq req.Req
 		req.ReqDeserial(&recvdReq, t.reqbuf)
@@ -27,7 +43,11 @@ func (t *testClient) recvLoop() {
 		if recvdReq.Plsz > 0 {
 			plbuf := make([]byte, recvdReq.Plsz)
 			read, err = t.serverConn.Read(plbuf)
-			fmt.Printf("message: %s\n", string(plbuf))
+			if recvdReq.Rtype == req.PRLIST {
+				printProcList(plbuf)
+			} else {
+				fmt.Printf("message: %s\n", string(plbuf))
+			}
 		}
 	}
 
@@ -58,7 +78,7 @@ func (t *testClient) closeApp() {
 	t.serverConn.Write(t.reqbuf)
 }
 
-func (t *testClient) listApp() {
+func (t *testClient) listProcs() {
 	resp := req.Req{
 		Rtype: req.PRLIST,
 		Src:   t.clientID,
@@ -70,29 +90,7 @@ func (t *testClient) listApp() {
 
 func (t *testClient) openFM() {
 	resp := req.Req{
-		Rtype: req.PROPEN,
-		Src:   t.clientID,
-		Info:  1, // 1 is FM's clientID
-	}
-
-	req.ReqSerial(t.reqbuf, &resp)
-	t.serverConn.Write(t.reqbuf)
-}
-
-func (t *testClient) closeFM() {
-	resp := req.Req{
-		Rtype: req.PRCLOSE,
-		Src:   t.clientID,
-		Info:  1, // 1 is FM's clientID
-	}
-
-	req.ReqSerial(t.reqbuf, &resp)
-	t.serverConn.Write(t.reqbuf)
-}
-
-func (t *testClient) checkFM() {
-	resp := req.Req{
-		Rtype: req.FMCHECK,
+		Rtype: req.FMOPEN,
 		Src:   t.clientID,
 	}
 
@@ -101,14 +99,15 @@ func (t *testClient) checkFM() {
 }
 
 func (t *testClient) passMSG() {
-	var msg string
 	var dst uint32
+	reader := bufio.NewReader(os.Stdin)
 
 	fmt.Println("enter destination")
 	fmt.Scanf("%d\n", &dst)
 
-	fmt.Println("string 2 send:")
-	fmt.Scanf("%s\n", &msg)
+	fmt.Println("string to send:")
+	msg, _ := reader.ReadString('\n')
+	msg = strings.TrimSpace(msg)
 
 	resp := req.Req{
 		Rtype: req.FWDMSG,
@@ -147,11 +146,9 @@ func StartTestClient() {
 		options := [...]strfn{
 			strfn{"0. open application", tc.openApp},
 			strfn{"1. close application", tc.closeApp},
-			strfn{"2. list open applications", tc.listApp},
+			strfn{"2. list open processes", tc.listProcs},
 			strfn{"3. open file manager", tc.openFM},
-			strfn{"4. close file manager", tc.closeFM},
-			strfn{"5. is file manager active?", tc.checkFM},
-			strfn{"6. pass a message to a program", tc.passMSG},
+			strfn{"4. send message to proc", tc.passMSG},
 		}
 
 		for _, s := range options {
