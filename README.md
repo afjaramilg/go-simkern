@@ -1,4 +1,4 @@
-# pryct1-ST0257
+# go-simkern
 This is a small, quick project made for my operating systems class. Its supposed to simulate a kernel talking to processes through messages. This simulation is achieved by passing messages through TCP sockets between certain processes.
 
 ### WARNING
